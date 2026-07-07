@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="停車王">
+  <defs>
+    <linearGradient id="pk-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1663AC"></stop><stop offset="1" stop-color="#0A3C70"></stop>
+    </linearGradient>
+    <linearGradient id="pk-gold" x1="0" y1="0.2" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFD64C"></stop><stop offset="1" stop-color="#EFA200"></stop>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#pk-bg)"></rect>
+  <path d="M170 206 L170 128 L213 170 L256 114 L299 170 L342 128 L342 206 Z" fill="url(#pk-gold)"></path>
+  <rect x="168" y="198" width="176" height="28" rx="7" fill="url(#pk-gold)"></rect>
+  <circle cx="170" cy="120" r="11" fill="#FFE680"></circle>
+  <circle cx="256" cy="106" r="12" fill="#FFE680"></circle>
+  <circle cx="342" cy="120" r="11" fill="#FFE680"></circle>
+  <text x="258" y="432" font-family="Arial, sans-serif" font-weight="800" font-size="252" fill="#fff" text-anchor="middle">P</text>
+</svg>

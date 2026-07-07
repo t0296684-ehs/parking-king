@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>停車王</title>
+<meta name="theme-color" content="#0F4C8A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="icon" href="./icon-192.png">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    /* 品牌 */
+    --blue:#0F4C8A; --blue-strong:#0A3C70; --blue-soft:#E7F0FA; --bolt:#F5B301;
+    /* 中性（略偏冷的專業灰，維持溫潤底） */
+    --ink:#141821; --sub:#616875; --faint:#9AA1AC;
+    --line:#E7E5DE; --line-soft:#F0EEE8;
+    --bg:#F1EFE9; --card:#FFFFFF;
+    /* 四級車位語意（提高對比、陽光可辨識） */
+    --high:#3C8A17; --high-bg:#E7F2D8; --high-ink:#245206;
+    --mid:#E08A00;  --mid-bg:#FBEDCF;  --mid-ink:#6E4400;
+    --low:#D62D2A;  --low-bg:#FBDEDC;  --low-ink:#8A140F;
+    --none:#AEB1A9; --none-bg:#ECEAE3; --none-ink:#5A5E58;
+    /* 充電 */
+    --ev:#0C8A64; --ev-bg:#DDF3EB; --ev-ink:#054532;
+    --tesla:#E11B22; --tesla-bg:#FCE4E3; --tesla-ink:#8E1013;
+    --shadow:0 1px 2px rgba(20,24,33,.04), 0 6px 16px rgba(20,24,33,.06);
+    --shadow-lg:0 -8px 40px rgba(20,24,33,.20);
+  }
+  * { box-sizing:border-box; margin:0; -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; }
+  body {
+    font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+    color:var(--ink); background:var(--bg);
+    display:flex; flex-direction:column; overscroll-behavior:none;
+    -webkit-font-smoothing:antialiased; font-size:15px;
+  }
+  button { font-family:inherit; }
+
+  /* ---------- Header ---------- */
+  header {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:10px 16px; padding-top:calc(10px + env(safe-area-inset-top,0px));
+    background:var(--card); border-bottom:1px solid var(--line); flex:none;
+    position:relative; z-index:5;
+  }
+  .brand { display:flex; align-items:center; gap:9px; min-width:0; }
+  .brand .mark {
+    width:36px; height:36px; border-radius:10px; flex:none;
+    box-shadow:0 2px 6px rgba(15,76,138,.35); overflow:hidden; display:block;
+  }
+  .brand .mark img { width:100%; height:100%; display:block; }
+  .brand .name { font-weight:800; font-size:19px; letter-spacing:1px; white-space:nowrap; }
+  #citySel {
+    font:inherit; font-size:13px; font-weight:600; color:var(--blue);
+    border:1.5px solid var(--blue-soft); border-radius:999px; background:var(--blue-soft);
+    padding:5px 26px 5px 12px; max-width:112px; cursor:pointer;
+    appearance:none; -webkit-appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%230F4C8A' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 10px center;
+  }
+  .meta { display:flex; align-items:center; gap:8px; flex:none; }
+  #updated {
+    font-size:11.5px; font-weight:600; color:var(--sub); white-space:nowrap;
+    display:flex; align-items:center; gap:5px;
+  }
+  #updated::before {
+    content:""; width:7px; height:7px; border-radius:50%; background:var(--high);
+    box-shadow:0 0 0 3px var(--high-bg); flex:none;
+  }
+  .meta button {
+    border:1px solid var(--line); background:var(--card); border-radius:10px;
+    width:38px; height:38px; font-size:18px; color:var(--ink); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; transition:.12s;
+  }
+  .meta button:active { background:var(--blue-soft); border-color:var(--blue); color:var(--blue); transform:scale(.94); }
+
+  /* ---------- 篩選 segmented ---------- */
+  .chips {
+    display:flex; gap:4px; padding:8px 12px; background:var(--card);
+    border-bottom:1px solid var(--line); flex:none;
+  }
+  .chip {
+    flex:1; font-size:14px; font-weight:700; padding:9px 8px; border-radius:11px;
+    border:1px solid transparent; background:var(--bg); color:var(--sub); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:5px; transition:.14s;
+  }
+  .chip:active { transform:scale(.97); }
+  .chip.on { background:var(--blue); color:#fff; box-shadow:0 3px 10px rgba(15,76,138,.30); }
+
+  /* ---------- 品牌列 ---------- */
+  .bchips {
+    display:flex; gap:7px; padding:9px 14px; background:var(--card);
+    border-bottom:1px solid var(--line); overflow-x:auto; flex:none;
+    -webkit-overflow-scrolling:touch; scrollbar-width:none;
+  }
+  .bchips::-webkit-scrollbar { display:none; }
+  .bchip {
+    flex:none; font-size:13px; font-weight:600; padding:6px 14px; border-radius:999px;
+    border:1.5px solid var(--line); background:var(--card); color:var(--sub); cursor:pointer;
+    display:flex; align-items:center; gap:5px; transition:.12s;
+  }
+  .bchip:active { transform:scale(.95); }
+  .bchip.on { background:var(--ev); border-color:var(--ev); color:#fff; }
+  .bchip.tesla-chip.on { background:var(--tesla); border-color:var(--tesla); }
+  .bchip .tmark { color:var(--tesla); font-weight:800; }
+  .bchip.on .tmark { color:#fff; }
+
+  /* ---------- banner ---------- */
+  #banner {
+    display:none; padding:10px 16px; font-size:13px; font-weight:600;
+    background:var(--mid-bg); color:var(--mid-ink); flex:none;
+    border-bottom:1px solid var(--line); align-items:center; gap:8px;
+  }
+  #banner::before { content:"⚠"; font-size:15px; }
+
+  /* ---------- 地圖 ---------- */
+  .mapwrap { position:relative; flex:none; }
+  #map { width:100%; height:44vh; background:#DDE6EE; }
+  .leaflet-container { font:inherit; }
+  #recenterBtn {
+    position:absolute; right:14px; bottom:26px; z-index:500;
+    width:48px; height:48px; border-radius:50%; background:var(--card);
+    border:1px solid var(--line); box-shadow:0 3px 12px rgba(20,24,33,.22);
+    color:var(--blue); cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:.12s;
+  }
+  #recenterBtn svg { width:24px; height:24px; }
+  #recenterBtn:active { transform:scale(.92); background:var(--blue-soft); border-color:var(--blue); }
+  #recenterBtn.located { color:var(--blue); }
+  #recenterBtn.located::after {
+    content:""; position:absolute; top:9px; right:9px; width:8px; height:8px; border-radius:50%;
+    background:var(--high); box-shadow:0 0 0 2px var(--card);
+  }
+
+  /* 重要地標標籤 */
+  .lm {
+    display:inline-flex; align-items:center; gap:4px; transform:translate(-6px,-50%);
+    font-size:11px; font-weight:700; color:#39404C; white-space:nowrap;
+    background:rgba(255,255,255,.85); padding:2px 8px 2px 6px; border-radius:999px;
+    box-shadow:0 1px 4px rgba(20,24,33,.20); line-height:1.4;
+  }
+  .lm .d { width:8px; height:8px; border-radius:50%; flex:none; }
+  .lm-transit .d, .lm-airport .d { background:#2A6FDB; }
+  .lm-hospital .d { background:#D62D2A; }
+  .lm-mall .d     { background:#8A3FBF; }
+  .lm-school .d   { background:#0C8A64; }
+  .lm-sight .d    { background:#E08A00; }
+  .lm-stadium .d  { background:#616875; }
+
+  /* ---------- 清單 ---------- */
+  #list {
+    flex:1; overflow-y:auto; padding:12px 12px calc(28px + env(safe-area-inset-bottom,0px));
+    -webkit-overflow-scrolling:touch; background:var(--bg);
+  }
+  .card {
+    position:relative; background:var(--card); border:1px solid var(--line);
+    border-radius:16px; padding:13px 14px 13px 16px; margin-bottom:10px;
+    box-shadow:var(--shadow); cursor:pointer; overflow:hidden; transition:.12s;
+  }
+  .card:active { transform:scale(.992); }
+  /* 左側語意色條，一眼判讀 */
+  .card::before {
+    content:""; position:absolute; left:0; top:0; bottom:0; width:5px; background:var(--none);
+  }
+  .card.lv-high::before { background:var(--high); }
+  .card.lv-mid::before  { background:var(--mid); }
+  .card.lv-low::before  { background:var(--low); }
+  .card.lv-none::before { background:var(--none); }
+  .card.lv-ev::before   { background:var(--ev); }
+
+  .card .top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .card .info { min-width:0; flex:1; }
+  .card .name { font-size:16px; font-weight:700; line-height:1.3; letter-spacing:.2px; }
+  .card .sub {
+    font-size:12.5px; color:var(--sub); margin-top:4px; line-height:1.45;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .card .dist { color:var(--blue); font-weight:700; }
+
+  /* 剩餘車位主數字模組 */
+  .avail {
+    flex:none; text-align:center; min-width:64px; border-radius:12px;
+    padding:7px 10px 6px; line-height:1;
+  }
+  .avail .n { font-size:27px; font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:-.5px; }
+  .avail .u { font-size:11px; font-weight:700; margin-top:4px; opacity:.9; }
+  .avail.high { background:var(--high-bg); color:var(--high-ink); }
+  .avail.mid  { background:var(--mid-bg);  color:var(--mid-ink); }
+  .avail.low  { background:var(--low-bg);  color:var(--low-ink); }
+  .avail.none { background:var(--none-bg); color:var(--none-ink); }
+  .avail.none .n { font-size:22px; }
+  .avail.ev   { background:var(--ev-bg);   color:var(--ev-ink); }
+
+  /* 車位分類明細 */
+  .types { display:flex; flex-wrap:wrap; gap:6px; margin-top:11px; }
+  .tchip {
+    font-size:12px; font-weight:700; padding:3px 9px; border-radius:8px;
+    font-variant-numeric:tabular-nums; display:flex; align-items:center; gap:4px;
+    background:var(--line-soft); color:var(--ink);
+  }
+  .tchip b { font-weight:800; }
+  .tchip.g  { background:var(--high-bg); color:var(--high-ink); }
+  .tchip.ac { background:#EAEEF6; color:#274070; }
+  .tchip.fa { background:#F6E9F1; color:#6E2352; }
+
+  /* 品牌標籤 */
+  .brands { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+  .brandtag {
+    font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px;
+    background:var(--ev-bg); color:var(--ev-ink); display:flex; align-items:center; gap:4px;
+  }
+  .brandtag.tesla { background:var(--tesla-bg); color:var(--tesla-ink); font-weight:800; }
+  .brandtag.tesla::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--tesla); }
+
+  /* 費率行 */
+  .rateline {
+    display:flex; align-items:center; gap:6px; margin-top:11px;
+    font-size:12.5px; color:var(--ev-ink); min-width:0;
+  }
+  .rateline .bolt { color:var(--ev); flex:none; }
+  .rateline .txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* 底部行動列 */
+  .foot { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:12px; }
+  .foot .note {
+    font-size:12px; color:var(--sub); display:flex; align-items:center; gap:5px; min-width:0;
+  }
+  .foot .note .txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .navbtn {
+    flex:none; border:none; background:var(--blue); color:#fff; font-size:14px; font-weight:700;
+    padding:9px 18px; border-radius:11px; cursor:pointer; display:flex; align-items:center; gap:6px;
+    box-shadow:0 3px 10px rgba(15,76,138,.30); transition:.12s;
+  }
+  .navbtn::before { content:"➤"; font-size:12px; }
+  .navbtn:active { background:var(--blue-strong); transform:scale(.96); }
+
+  .empty { text-align:center; color:var(--sub); font-size:14px; padding:48px 20px; line-height:1.7; }
+  .empty .big { font-size:32px; display:block; margin-bottom:10px; opacity:.5; }
+
+  /* ---------- 地圖圖釘（價格膠囊） ---------- */
+  /* 民營場 */
+  .pin.priv { background:#fff; color:#29426B; border:2px dashed #29426B; box-shadow:0 2px 5px rgba(0,0,0,.18); }
+  .pin.priv.pill::after { display:none; }
+  .avail.priv, .dbadge.priv { border:1.5px dashed #29426B; color:#29426B; background:#fff; }
+  .brandtag.priv { background:#EDF1F8; color:#29426B; }
+  .card.lv-priv { border-style:dashed; }
+  .chip.tog.off { text-decoration:line-through; opacity:.55; }
+  /* 導航三選一選單 */
+  #navsheet {
+    display:none; position:fixed; left:0; right:0; bottom:0; z-index:1300;
+    background:var(--card,#fff); border-radius:18px 18px 0 0;
+    box-shadow:0 -6px 24px rgba(0,0,0,.18);
+    padding:14px 16px calc(20px + env(safe-area-inset-bottom,0px));
+  }
+  #navsheet.open { display:block; }
+  #navsheet .grab { width:36px; height:4px; border-radius:2px; background:var(--line,#E4E1D8); margin:0 auto 12px; }
+  #navsheet .navtitle { margin:0 0 10px; font-size:14px; font-weight:700; text-align:center; }
+  #navsheet .navopt {
+    display:flex; align-items:center; gap:10px; padding:12px; margin-bottom:8px;
+    border:1px solid var(--line,#E4E1D8); border-radius:12px;
+    font-size:15px; color:var(--ink,#26261F); text-decoration:none;
+  }
+  #navsheet .navopt .ic {
+    width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center;
+    font-weight:800; font-size:14px; color:#fff;
+  }
+  #navsheet .navopt .ic.g { background:#1A73E8; }
+  #navsheet .navopt .ic.a { background:#555; }
+  #navsheet .navopt .ic.w { background:#05C8F7; }
+  #navsheet .navcancel {
+    display:block; width:100%; border:none; background:none; padding:10px 0 2px;
+    font-size:14px; color:var(--sub,#6E6B60); cursor:pointer;
+  }
+  .feechip {
+    display:inline-block; font-size:11px; font-weight:700; padding:1px 7px; margin-right:5px;
+    border-radius:999px; background:var(--card, #fff); color:var(--ink, #26261F);
+    border:1px solid var(--line, #E4E1D8); font-variant-numeric:tabular-nums; vertical-align:1px;
+  }
+  .pin {
+    display:inline-flex; align-items:center; justify-content:center; gap:2px;
+    font-weight:800; color:#fff; font-variant-numeric:tabular-nums; white-space:nowrap;
+    transform:translate(-50%,calc(-100% - 7px));
+    box-shadow:0 3px 8px rgba(0,0,0,.32);
+  }
+  .pin.pill {
+    padding:4px 9px; border-radius:999px; font-size:13px; border:2px solid #fff;
+    position:relative; line-height:1;
+  }
+  .pin.pill .cur { font-size:10px; font-weight:700; opacity:.85; }
+  /* 下方尖角 */
+  .pin.pill::after {
+    content:""; position:absolute; left:50%; bottom:-6px; transform:translateX(-50%);
+    border:6px solid transparent; border-top-width:7px; border-bottom-width:0;
+  }
+  .pin.high { background:var(--high); } .pin.high.pill::after { border-top-color:var(--high); }
+  .pin.mid  { background:var(--mid); }  .pin.mid.pill::after  { border-top-color:var(--mid); }
+  .pin.low  { background:var(--low); }  .pin.low.pill::after  { border-top-color:var(--low); }
+  .pin.none { background:var(--none); color:#2C2C2A; } .pin.none.pill::after { border-top-color:var(--none); }
+  .pin.free { background:var(--high); }  .pin.free.pill::after { border-top-color:var(--high); }
+  /* 充電：水滴形 */
+  .pin.ev {
+    width:34px; height:34px; border-radius:50% 50% 50% 4px; font-size:16px;
+    background:var(--ev); border:2.5px solid #fff; transform:translate(-50%,-100%) rotate(-45deg);
+    box-shadow:0 3px 8px rgba(0,0,0,.35);
+  }
+  .pin.ev span { transform:rotate(45deg); }
+
+  /* Leaflet 控制項配色 */
+  .leaflet-bar a, .leaflet-control-layers-toggle {
+    border-radius:10px !important; color:var(--ink) !important;
+  }
+  .leaflet-control-layers { border-radius:12px !important; box-shadow:var(--shadow) !important; border:1px solid var(--line) !important; }
+  .leaflet-control-layers-expanded { padding:8px 12px 8px 10px !important; font:inherit; font-size:13px; }
+  .leaflet-control-zoom a { font-size:18px !important; font-weight:700; }
+
+  /* ---------- 詳情面板 ---------- */
+  #detail {
+    display:none; position:fixed; left:0; right:0; bottom:0; z-index:1200;
+    background:var(--card); border-radius:22px 22px 0 0; box-shadow:var(--shadow-lg);
+    max-height:80vh; overflow-y:auto;
+    padding:10px 18px calc(22px + env(safe-area-inset-bottom,0px));
+  }
+  #detail.open { display:block; animation:sheet .26s cubic-bezier(.2,.8,.2,1); }
+  @keyframes sheet { from { transform:translateY(100%); } to { transform:translateY(0); } }
+  #detail .grab { width:40px; height:5px; border-radius:3px; background:var(--line); margin:2px auto 14px; }
+  #detail .dhead { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding-right:34px; }
+  #detail h3 { font-size:20px; font-weight:800; line-height:1.3; }
+  #detail .dbadge {
+    flex:none; text-align:center; border-radius:12px; padding:8px 14px 7px; line-height:1;
+  }
+  #detail .dbadge .n { font-size:26px; font-weight:800; font-variant-numeric:tabular-nums; }
+  #detail .dbadge .u { font-size:11px; font-weight:700; margin-top:4px; }
+  #detail .dbadge.high { background:var(--high-bg); color:var(--high-ink); }
+  #detail .dbadge.mid  { background:var(--mid-bg);  color:var(--mid-ink); }
+  #detail .dbadge.low  { background:var(--low-bg);  color:var(--low-ink); }
+  #detail .dbadge.none { background:var(--none-bg); color:var(--none-ink); }
+  #detail .dbadge.none .n { font-size:20px; }
+  #detail .dbadge.ev   { background:var(--ev-bg);   color:var(--ev-ink); }
+
+  #detail .section {
+    margin-top:12px; border:1px solid var(--line); border-radius:14px; padding:12px 14px; background:#FCFBF8;
+  }
+  #detail .section h4 {
+    font-size:12px; color:var(--sub); font-weight:800; margin-bottom:6px;
+    letter-spacing:.5px; text-transform:uppercase;
+  }
+  #detail .section p { font-size:14px; line-height:1.7; white-space:pre-wrap; color:var(--ink); }
+  #detail .actions {
+    display:flex; gap:10px; margin-top:16px; position:sticky; bottom:0;
+    padding-top:6px; background:linear-gradient(to top,var(--card) 70%,transparent);
+  }
+  #detail .actions .navbtn { flex:1; justify-content:center; padding:15px 0; font-size:16px; border-radius:14px; }
+  #detail .close {
+    position:absolute; top:14px; right:16px; width:32px; height:32px;
+    border:none; border-radius:50%; background:var(--bg); color:var(--sub);
+    font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  #detail .close:active { background:var(--line); }
+
+  #scrim { display:none; position:fixed; inset:0; background:rgba(20,24,33,.35); z-index:1100; }
+  #scrim.open { display:block; animation:fade .26s ease; }
+  @keyframes fade { from { opacity:0; } to { opacity:1; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="mark"><img src="./logo.svg" alt="停車王"></span>
+    <span class="name">停車王</span>
+    <select id="citySel" aria-label="選擇縣市"></select>
+  </div>
+  <div class="meta">
+    <span id="updated">載入中…</span>
+    <button id="locateBtn" title="定位到我" aria-label="定位到我">◎</button>
+    <button id="refreshBtn" title="重新整理" aria-label="重新整理">↻</button>
+  </div>
+</header>
+
+<div class="chips" role="tablist">
+  <button class="chip on" data-filter="all">全部</button>
+  <button class="chip" data-filter="ev">⚡ 充電</button>
+  <button class="chip" data-filter="open">只看有位</button>
+  <button class="chip tog" id="privChip">民營</button>
+</div>
+
+<div class="bchips" id="brandChips" style="display:none"></div>
+
+<div id="banner"></div>
+<div class="mapwrap">
+  <div id="map"></div>
+  <button id="recenterBtn" title="回到我的位置" aria-label="回到我的位置">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <circle cx="12" cy="12" r="3.5"></circle>
+      <line x1="12" y1="2" x2="12" y2="5"></line>
+      <line x1="12" y1="19" x2="12" y2="22"></line>
+      <line x1="2" y1="12" x2="5" y2="12"></line>
+      <line x1="19" y1="12" x2="22" y2="12"></line>
+    </svg>
+  </button>
+</div>
+<div id="list"></div>
+
+<div id="scrim"></div>
+<div id="detail"></div>
+<div id="navsheet"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>
