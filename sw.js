@@ -1,5 +1,5 @@
 // 找位子 Service Worker v1 — App 殼快取優先、API 一律走網路
-const CACHE = "zhaoweizi-v4";
+const CACHE = "zhaoweizi-v5";
 const SHELL = ["./", "./index.html", "./app.js", "./manifest.json", "./icon-192.png", "./icon-512.png", "./logo.svg"];
 
 self.addEventListener("install", (e) => {
