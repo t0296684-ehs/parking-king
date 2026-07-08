@@ -123,7 +123,7 @@ function navLinks(item) {
 function openNavChooser(item) {
   const el = document.getElementById("navsheet");
   const links = navLinks(item);
-  el.innerHTML = `<div class="grab"></div>
+  el.innerHTML = `<div class="grab"></div><div class="pullhint">⌄</div>
     <p class="navtitle">導航到「${esc(shortText(item.name || "目的地", 18))}」</p>
     <a class="navopt" href="${links.google}" target="_blank" rel="noopener"><span class="ic g">G</span>Google Maps</a>
     <a class="navopt" href="${links.apple}" target="_blank" rel="noopener"><span class="ic a">&#63743;</span>Apple 地圖</a>
@@ -133,6 +133,36 @@ function openNavChooser(item) {
   el.querySelector(".navcancel").addEventListener("click", closeNavChooser);
   el.classList.add("open");
   document.getElementById("scrim").classList.add("open");
+}
+
+// ---- 下拉關閉手勢（詳情面板與導航選單共用）----
+function enableDragClose(el, onClose) {
+  let startY = null, curY = 0, startT = 0, dragging = false;
+  el.addEventListener("touchstart", (e) => {
+    if (el.scrollTop > 0) return; // 內容捲動中不攔截
+    startY = e.touches[0].clientY; startT = Date.now(); curY = 0; dragging = true;
+    el.style.transition = "";
+  }, { passive: true });
+  el.addEventListener("touchmove", (e) => {
+    if (!dragging || startY === null) return;
+    curY = Math.max(0, e.touches[0].clientY - startY);
+    el.style.transform = curY > 0 ? `translateY(${curY}px)` : "";
+  }, { passive: true });
+  el.addEventListener("touchend", () => {
+    if (!dragging) return;
+    dragging = false;
+    const fast = curY > 40 && Date.now() - startT < 260;
+    if (curY > Math.max(90, el.offsetHeight / 4) || fast) {
+      el.style.transition = "transform .18s ease";
+      el.style.transform = "translateY(110%)";
+      setTimeout(() => { el.style.transform = ""; el.style.transition = ""; onClose(); }, 180);
+    } else {
+      el.style.transition = "transform .18s ease";
+      el.style.transform = "";
+      setTimeout(() => { el.style.transition = ""; }, 200);
+    }
+    startY = null; curY = 0;
+  });
 }
 
 function closeNavChooser() {
@@ -170,7 +200,7 @@ function esc(s) {
 // ---------------------------------------------------------------- 應用狀態
 const state = {
   city: CONFIG.DEFAULT_CITY,
-  lots: [], stations: [], privLots: [], showPriv: true, userPos: null,
+  lots: [], stations: [], privLots: [], showPriv: true, showLm: true, pinMode: "avail", userPos: null,
   filter: "all", brand: null,
   map: null, layer: null, userMarker: null,
 };
@@ -250,29 +280,37 @@ function visibleItems() {
 function hourlyFee(text) {
   if (!text) return undefined;
   const s = String(text).replace(/\s+/g, "").toLowerCase();
-  if (/免費|^free$|^no$/.test(s) && !/逾時|超過|之後|後每|後,|以上/.test(s)) return 0;
+  // 白名單制：整段費率明確為免費才標免費，條件式/附帶提及一律不標
+  if (/^(全日|全天|24小時)?免費(停車|入場)?$/.test(s) || /^(free|no|none)$/.test(s)) return 0;
   const m = s.match(/(\d+)元?\/(?:小)?時/)              // 20元/時、30/小時
        || s.match(/每(?:小)?時(\d+)/)                   // 每小時30
        || s.match(/(?:小)?時(\d+)元/)                   // 時30元
-       || s.match(/(?:nt\$?|\$)?(\d+)(?:twd|元|nt\$?)?\/(?:1)?(?:hr?|hour)/); // OSM: 30TWD/hour、NT$30/hr
-  if (m) return parseInt(m[1], 10);
+       || s.match(/(?:nt\$?|\$)?(\d+)(?:twd|元|nt\$?)?\/(?:1)?(?:hr?|hour)/); // OSM 格式
+  if (m) {
+    const v = parseInt(m[1], 10);
+    if (v >= 1 && v <= 300) return v; // 合理性檢查：超出範圍視為誤抓
+  }
   return undefined; // 解析不出明確時費就不顯示，避免誤導
 }
 
-function pinHtml(item) {
+function pinHtml(item, mode = "avail") {
   if (item.kind === "ev") return `<div class="pin ev"><span>⚡</span></div>`;
   if (item.kind === "priv") {
-    const fee = hourlyFee(item.fee);
-    const label = fee === 0 ? "免費" : (fee !== undefined ? `<span class="cur">$</span>${fee}` : "P");
-    return `<div class="pin pill priv">${label}</div>`;
+    if (mode === "price") {
+      const fee = hourlyFee(item.fee);
+      const label = fee === 0 ? "免費" : (fee !== undefined ? `<span class="cur">$</span>${fee}` : "P");
+      return `<div class="pin pill priv">${label}</div>`;
+    }
+    return `<div class="pin pill priv">P</div>`; // 車位模式：民營無即時，一律 P
   }
   const m = mainAvail(item);
   const lv = availLevel(m);
-  const fee = hourlyFee(item.fare);
-  let label;
-  if (fee === 0) label = "免費";
-  else if (fee !== undefined) label = `<span class="cur">$</span>${fee}`;
-  else label = lv === "none" ? "—" : (m > 999 ? "999" : m); // 無法解析價格 → 退回剩餘車位數
+  if (mode === "price") {
+    const fee = hourlyFee(item.fare);
+    const label = fee === 0 ? "免費" : (fee !== undefined ? `<span class="cur">$</span>${fee}` : "—");
+    return `<div class="pin pill ${lv}">${label}</div>`; // 顏色永遠代表車位充足度
+  }
+  const label = lv === "none" ? "—" : (m > 999 ? "999" : m);
   return `<div class="pin pill ${lv}">${label}</div>`;
 }
 
@@ -303,7 +341,7 @@ function render() {
   state.layer.clearLayers();
   for (const it of items) {
     const marker = L.marker([it.lat, it.lon], {
-      icon: L.divIcon({ html: pinHtml(it), className: "", iconSize: [0, 0], iconAnchor: [0, 0] }),
+      icon: L.divIcon({ html: pinHtml(it, state.pinMode), className: "", iconSize: [0, 0], iconAnchor: [0, 0] }),
     });
     marker.on("click", () => openDetail(it));
     state.layer.addLayer(marker);
@@ -439,7 +477,7 @@ function openDetail(it) {
     badge = `<div class="dbadge ${lv}"><div class="n">${lv === "none" ? "—" : m}</div><div class="u">${lv === "none" ? "無即時" : (hasTypes ? "一般剩" : "剩餘")}</div></div>`;
   }
 
-  el.innerHTML = `<div class="grab"></div>
+  el.innerHTML = `<div class="grab"></div><div class="pullhint">⌄</div>
     <button class="close" aria-label="關閉">✕</button>
     <div class="dhead">
       <h3>${esc(it.name)}</h3>
@@ -577,7 +615,7 @@ async function loadLandmarks() {
     if (!resp.ok) return;
     const json = await resp.json();
     const els = json.elements || [];
-    renderLandmarks(els.filter((e) => (e.tags || {}).amenity !== "parking"));
+    renderLandmarks(state.showLm ? els.filter((e) => (e.tags || {}).amenity !== "parking") : []);
     state.privLots = buildPrivLots(els, state.lots);
     render(); // 民營場加入地圖與清單
   } catch (e) { /* 靜默降級：地標載入失敗不影響主要功能 */ }
@@ -607,9 +645,13 @@ function locate() {
 
 // ---------------------------------------------------------------- 初始化
 function init() {
-  let saved = null;
-  try { saved = localStorage.getItem("zhaoweizi.city"); } catch {}
-  if (saved && CITIES[saved]) state.city = saved;
+  try {
+    const saved = localStorage.getItem("zhaoweizi.city");
+    if (saved && CITIES[saved]) state.city = saved;
+    if (localStorage.getItem("zhaoweizi.pinmode") === "price") state.pinMode = "price";
+    if (localStorage.getItem("zhaoweizi.priv") === "0") state.showPriv = false;
+    if (localStorage.getItem("zhaoweizi.lm") === "0") state.showLm = false;
+  } catch {}
 
   const c = CITIES[state.city];
   state.map = L.map("map", { zoomControl: true }).setView([c[1], c[2]], CONFIG.DEFAULT_ZOOM);
@@ -649,11 +691,36 @@ function init() {
       render();
     });
   });
-  document.getElementById("privChip").addEventListener("click", () => {
+  const privChip = document.getElementById("privChip");
+  privChip.classList.toggle("off", !state.showPriv);
+  privChip.addEventListener("click", () => {
     state.showPriv = !state.showPriv;
-    document.getElementById("privChip").classList.toggle("off", !state.showPriv);
+    privChip.classList.toggle("off", !state.showPriv);
+    try { localStorage.setItem("zhaoweizi.priv", state.showPriv ? "1" : "0"); } catch {}
     render();
   });
+  const lmChip = document.getElementById("lmChip");
+  lmChip.classList.toggle("off", !state.showLm);
+  lmChip.addEventListener("click", () => {
+    state.showLm = !state.showLm;
+    lmChip.classList.toggle("off", !state.showLm);
+    try { localStorage.setItem("zhaoweizi.lm", state.showLm ? "1" : "0"); } catch {}
+    if (state.showLm) { _lmKey = ""; scheduleLandmarks(); }
+    else renderLandmarks([]);
+  });
+  const seg = document.getElementById("pinModeSeg");
+  const syncSeg = () => seg.querySelectorAll("button").forEach((b) =>
+    b.classList.toggle("on", b.dataset.mode === state.pinMode));
+  syncSeg();
+  seg.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+    if (state.pinMode === b.dataset.mode) return;
+    state.pinMode = b.dataset.mode;
+    try { localStorage.setItem("zhaoweizi.pinmode", state.pinMode); } catch {}
+    syncSeg();
+    render();
+  }));
+  enableDragClose(document.getElementById("detail"), closeDetail);
+  enableDragClose(document.getElementById("navsheet"), closeNavChooser);
   document.getElementById("refreshBtn").addEventListener("click", loadAll);
   document.getElementById("locateBtn").addEventListener("click", locate);
   document.getElementById("recenterBtn").addEventListener("click", () => {
@@ -671,5 +738,5 @@ if (typeof window !== "undefined") window.addEventListener("DOMContentLoaded", i
 if (typeof module !== "undefined") {
   module.exports = { haversineKm, availLevel, fmtDist, shortText, navUrl, navLinks, badgeFor, esc,
                      nearestCity, spaceLabel, mainAvail, spacesSummary, brandList,
-                     buildPrivLots, privBrand, CITIES, CONFIG };
+                     buildPrivLots, privBrand, hourlyFee, pinHtml, CITIES, CONFIG };
 }
