@@ -82,7 +82,7 @@
   .chips {
     display:flex; gap:4px; padding:8px 12px; background:var(--card);
     border-bottom:1px solid var(--line); flex:none;
-  }
+   overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .chip {
     flex:1; font-size:14px; font-weight:700; padding:9px 8px; border-radius:11px;
     border:1px solid transparent; background:var(--bg); color:var(--sub); cursor:pointer;
@@ -242,6 +242,12 @@
   .empty .big { font-size:32px; display:block; margin-bottom:10px; opacity:.5; }
 
   /* ---------- 地圖圖釘（價格膠囊） ---------- */
+  .seg { display:flex; flex:none; border:1px solid var(--line,#E4E1D8); border-radius:999px; overflow:hidden; }
+  .seg button { border:none; background:var(--card,#fff); font:inherit; font-size:12px;
+                padding:6px 12px; color:var(--sub,#6E6B60); cursor:pointer; }
+  .seg button.on { background:#1A5FAF; color:#fff; }
+  .pullhint { text-align:center; font-size:14px; line-height:8px; color:var(--sub,#6E6B60);
+              margin:-4px 0 8px; user-select:none; }
   /* 民營場 */
   .pin.priv { background:#fff; color:#29426B; border:2px dashed #29426B; box-shadow:0 2px 5px rgba(0,0,0,.18); }
   .pin.priv.pill::after { display:none; }
@@ -381,10 +387,12 @@
 </header>
 
 <div class="chips" role="tablist">
+  <div class="seg" id="pinModeSeg" aria-label="圖釘顯示模式"><button data-mode="avail" class="on">車位</button><button data-mode="price">價格</button></div>
   <button class="chip on" data-filter="all">全部</button>
   <button class="chip" data-filter="ev">⚡ 充電</button>
   <button class="chip" data-filter="open">只看有位</button>
   <button class="chip tog" id="privChip">民營</button>
+  <button class="chip tog" id="lmChip">地標</button>
 </div>
 
 <div class="bchips" id="brandChips" style="display:none"></div>
